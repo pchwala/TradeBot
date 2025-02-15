@@ -1,3 +1,5 @@
+from idlelib.debugger_r import restart_subprocess_debugger
+
 import websocket, json, openpyxl
 import websockets
 from datetime import datetime, timedelta
@@ -91,7 +93,7 @@ class XAPI:
             print(f"Unsubscribed: {result}")
 
 
-    async def get_keep_alive(self):
+    async def get_keep_alive_s(self):
         """Establishes stream connection with getKeepAlive command.
         This makes XTB server send 'keep alive' messages every 3 seconds """
         command = {
@@ -105,8 +107,45 @@ class XAPI:
                 msg = await ws.recv()
                 print(msg)
             except Exception as e:
-                print(f"get_keep_alive connection closed: {e}")
+                print(f"get_keep_alive_s connection closed: {e}")
+                return e
 
+
+    async def get_balance_s(self):
+        """Establishes stream connection with getBalance command.
+        This makes XTB server send account indicator values in real-time as soon as they are available in the system"""
+        command = {
+            "command": "getBalance",
+            "streamSessionId": self._stream_id
+        }
+        ws = await self.subscribe_command(command)
+
+        while True:
+            try:
+                msg = await ws.recv()
+                print(msg)
+            except Exception as e:
+                print(f"get_balance_s connection closed: {e}")
+                return e
+
+
+    async def get_candles_s(self, symbol):
+        """Establishes stream connection with getCandles command.
+        Subscribes for and unsubscribes from API chart candles. The interval of every candle is 1 minute.
+        A new candle arrives every minute."""
+        command = {
+            "command": "getCandles",
+            "streamSessionId": self._stream_id,
+            "symbol": symbol
+        }
+        ws = await self.subscribe_command(command)
+
+        while True:
+            try:
+                msg = await ws.recv()
+                print(msg)
+            except Exception as e:
+                print(f"get_balance_s connection closed: {e}")
                 return e
 
 
@@ -208,6 +247,14 @@ class XAPI:
         return result
 
 
+    async def ping_interval(self, interval):
+        time = 0
+        while True:
+            result = self.ping()
+            print("ping:", result, " time: ", time)
+            time += 1
+            await asyncio.sleep(interval)
+
     @staticmethod
     def get_time():
         time = datetime.today().strftime('%m/%d/%Y %H:%M:%S%f')
@@ -275,8 +322,6 @@ class XAPI:
         return ws
 
     async def close_all_stream_connections(self):
-        await asyncio.sleep(7)
-
         for ws in self.stream_socket_list:  # Iterate list of all connections and try to close them
             try:
                 await ws.close()
