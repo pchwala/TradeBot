@@ -28,8 +28,8 @@ class XAPI:
         self.exec_start = self.get_time()
         self._ws_main = self.connect()
         result = self.login()
-        if result is False:
-            print("Main login attempt failed")
+        if result is not None:
+            print(f"Main login attempt failed {result}")
             return False
         else:
             return True
@@ -46,17 +46,13 @@ class XAPI:
         login_json = json.dumps(login)
         # Sending Login Request
         result = self.send(login_json)
-        if result is False:     # Sending failed
-            return False
-
         result = json.loads(result)
+        if result['status'] is False:     # Sending failed
+            return result
+
         self._stream_id = result["streamSessionId"]
-        status = result["status"]
-        if str(status) == "True":
-            return True
-        else:
-            print("Error during logging attempt: ", result)
-            return False
+
+        return None
 
 
     def logout(self):

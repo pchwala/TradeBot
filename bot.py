@@ -1,10 +1,15 @@
 import asyncio
+import json
 from time import sleep
 
 from xAPI import XAPI
 
+
 async def main():
-    main_api = XAPI("17536313", "Mj%Lc8S8RLG&a")
+    with open('credentials.json', 'r') as file:
+        credentials = json.load(file)
+
+    main_api = XAPI(credentials['id'], credentials['password'])
     result = main_api.establish_connection()
     if result is False:
         return False
