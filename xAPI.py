@@ -1,39 +1,54 @@
 import websocket, json, openpyxl
 import websockets
-from websockets.exceptions import WebSocketException
 from datetime import datetime, timedelta
 import asyncio
+
 
 
 class XAPI:
     __version__ = "1.0"
 
-    def __init__(self, ID, PSW, dest):
+    def __init__(self, id, pswd):
 
         self._dest_main = "wss://ws.xtb.com/demo"
         self._dest_stream = "wss://ws.xtb.com/demoStream"
-        self._ID = ID
-        self._PSW = PSW
+        self._id = id
+        self._pswd = pswd
         self._ws_main = None    # main websocket
         self._ws_stream = None  # streaming socket
-        self._stream_id = None
+        self._stream_id = None  # ID for streaming connections
+        self.exec_start = None
+
+        # List with all created stream connections
+        self.stream_socket_list = []
+
+
+    def establish_connection(self):
+        """Establishes main connection from which all the different stream connections emerge"""
         self.exec_start = self.get_time()
-        self.ws_main = self.connect()
-        self.login()
-        self._ws_stream = self.connect_stream()
+        self._ws_main = self.connect()
+        result = self.login()
+        if result is False:
+            print("Main login attempt failed")
+            return False
+        else:
+            return True
 
 
     def login(self):
         login = {
             "command": "login",
             "arguments": {
-                "userId": self._ID,
-                "password": self._PSW
+                "userId": self._id,
+                "password": self._pswd
             }
         }
         login_json = json.dumps(login)
         # Sending Login Request
         result = self.send(login_json)
+        if result is False:     # Sending failed
+            return False
+
         result = json.loads(result)
         self._stream_id = result["streamSessionId"]
         status = result["status"]
@@ -54,7 +69,6 @@ class XAPI:
         result = json.loads(result)
         status = result["status"]
         self.disconnect()
-        self.disconnect_stream()
         if str(status) == "True":
             return True
         else:
@@ -62,50 +76,45 @@ class XAPI:
             return False
 
 
-    async def get_keep_alive(self):
+    async def subscribe_command(self, command):
+        """Creates stream connection and subscribes for server messages with specific command.
+        Available commands: http://developers.xstore.pro/documentation/#available-streaming-commands"""
+        command_json = json.dumps(command)
+        ws = await self.create_stream_connection()
+        await ws.send(command_json)
+        return ws
 
+
+    async def unsubscribe_command(self, command):
+        """Creates new stream connection just to send unsubscribe command then closes it.
+        This action causes connection that was subscribing to also close.
+        Available commands: http://developers.xstore.pro/documentation/#available-streaming-commands"""
+        command_json = json.dumps(command)
+        async with websockets.connect(self._dest_stream) as ws:
+            result = await ws.send(command_json)
+            print(f"Unsubscribed: {result}")
+
+
+    async def get_keep_alive(self):
+        """Establishes stream connection with getKeepAlive command.
+        This makes XTB server send 'keep alive' messages every 3 seconds """
         command = {
             "command": "getKeepAlive",
 	        "streamSessionId": self._stream_id
         }
+        ws = await self.subscribe_command(command)
 
-        command_json = json.dumps(command)
-
-        async with websockets.connect(self._dest_stream) as ws:
-            await ws.send(command_json)
-            while True:
+        while True:
+            try:
                 msg = await ws.recv()
                 print(msg)
+            except Exception as e:
+                print(f"get_keep_alive connection closed: {e}")
 
-        return None
-
-
-    async def get_balance_stream(self):
-
-        command = {
-            "command": "getBalance",
-            "streamSessionId": self._stream_id
-        }
-
-        command_json = json.dumps(command)
-
-        async with websockets.connect(self._dest_stream) as ws:
-            await ws.send(command_json)
-            while True:
-                msg = await ws.recv()
-                print(msg)
-
-        return None
-
-    async def listen(self):
-        try:
-            async for message in self._ws_stream:
-                yield message
-        except Exception as e:
-            print("Error ", e)
+                return e
 
 
-    async def get_server_time(self):
+    def get_server_time(self):
         """Returns current time on trading server, the time in the server is the number of miliseconds from 01/01/1970 00:00:00 until the current moment"""
 
         time = {
@@ -191,36 +200,7 @@ class XAPI:
         return history
 
 
-    # TEMP FUNCTION
-    def make_trade(self, symbol, cmd, transaction_type, volume, comment="", order=0, sl=0, tp=0, days=0, hours=0,
-                   minutes=0):
-        TRADE_TRANS_INFO = {
-            "cmd": cmd,
-            "customComment": comment,
-            "expiration": 0,
-            "order": 0,
-            "price": 1.4,
-            "sl": sl,
-            "symbol": symbol,
-            "tp": tp,
-            "type": transaction_type,
-            "volume": volume
-        }
-        trade = {
-            "command": "tradeTransaction",
-            "arguments": {
-                "tradeTransInfo": TRADE_TRANS_INFO
-            }
-        }
-        trade_json = json.dumps(trade)
-        result = self.send(trade_json)
-        result = json.loads(result)
-        if result["status"] == True:
-            return True, result["returnData"]["order"]
-        else:
-            return False, 0
-
-    async def ping(self):
+    def ping(self):
         """Regularly calling this function is enough to refresh the internal state of all the components in the system.
          It is recommended that any application that does not execute other commands, should call this command at least once every 10 minutes."""
         ping = {
@@ -268,39 +248,41 @@ class XAPI:
         try:
             ws = websocket.create_connection(self._dest_main)
             return ws
-        except:
+        except Exception as e:
+            print(f"Can't establish main connection: {e}")
             return False
 
 
     def disconnect(self):
         try:
-            self.ws_main.close()
+            self._ws_main.close()
             return True
-        except:
+        except Exception as e:
+            print(f"Error while trying to disconnect: {e}")
             return False
 
 
     def send(self, msg):
-        self.ws_main.send(msg)
-        result = self.ws_main.recv()
-        return result + "\n"
-
-
-    def connect_stream(self):
         try:
-            ws = websocket.create_connection(self._dest_stream)
-            return ws
-        except:
+            self._ws_main.send(msg)
+            result = self._ws_main.recv()
+            return result + "\n"
+        except Exception as e:
+            print(f"Sending error: {e}")
             return False
 
 
-    def disconnect_stream(self):
-        try:
-            self._ws_stream.close()
-            return True
-        except:
-            return False
+    async def create_stream_connection(self):
+        ws = await websockets.connect(self._dest_stream)  # Create connection
+        self.stream_socket_list.append(ws)  # Add connect object to a list of all connections
+        ws = self.stream_socket_list[-1]  # Return pointer to that element
+        return ws
 
-    async def send_stream(self, msg):
-        self._ws_stream.send(msg)
-        return None
+    async def close_all_stream_connections(self):
+        await asyncio.sleep(7)
+
+        for ws in self.stream_socket_list:  # Iterate list of all connections and try to close them
+            try:
+                await ws.close()
+            except:
+                pass
