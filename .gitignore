@@ -1,6 +1,18 @@
 # Virtualenv files
 .venv
 .idea
+__pycache__
+
+# VSCode files
+.vscode
 
 # Credentials file
 credentials.json
+
+# Database files
+*.paraquet
+*.json
+*.db
+
+# Test files
+test.py

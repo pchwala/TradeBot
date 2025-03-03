@@ -93,6 +93,14 @@ class XAPI:
             print(f"Unsubscribed: {result}")
 
 
+    async def execute_command(self, command):
+        """Wrapping function for sending command and retrieving result"""
+        command_json = json.dumps(command)
+        result = self.send(command_json)
+        result = json.loads(result)
+        return result
+
+
     async def get_keep_alive_s(self):
         """Establishes stream connection with getKeepAlive command.
         This makes XTB server send 'keep alive' messages every 3 seconds """
@@ -149,33 +157,29 @@ class XAPI:
                 return e
 
 
-    def get_server_time(self):
+    async def get_server_time(self):
         """Returns current time on trading server, the time in the server is the number of miliseconds from 01/01/1970 00:00:00 until the current moment"""
 
         time = {
             "command": "getServerTime"
         }
-        time_json = json.dumps(time)
-        result = self.send(time_json)
-        result = json.loads(result)
+        result = await self.execute_command(time)
         time = result["returnData"]["time"]
         return time
 
 
-    def get_balance(self):
+    async def get_balance(self):
         """Returns the current balance in the account"""
 
         balance = {
             "command": "getMarginLevel"
         }
-        balance_json = json.dumps(balance)
-        result = self.send(balance_json)
-        result = json.loads(result)
+        result = await self.execute_command(balance)
         balance = result["returnData"]["balance"]
         return balance
 
 
-    def get_margin(self, symbol, volume):
+    async def get_margin(self, symbol, volume):
         """Returns expected margin for given instrument and volume. The value is calculated as expected margin value, and therefore might not be perfectly accurate"""
 
         margin = {
@@ -185,14 +189,12 @@ class XAPI:
                 "volume": volume
             }
         }
-        margin_json = json.dumps(margin)
-        result = self.send(margin_json)
-        result = json.loads(result)
+        result = await self.execute_command(margin)
         margin = result["returnData"]["margin"]
         return margin
 
 
-    def get_symbol(self, symbol):
+    async def get_symbol(self, symbol):
         """Returns a dictionary with information about symbol available for the user"""
 
         symbol = {
@@ -201,14 +203,23 @@ class XAPI:
                 "symbol": symbol
             }
         }
-        symbol_json = json.dumps(symbol)
-        result = self.send(symbol_json)
-        result = json.loads(result)
+        result = await self.execute_command(symbol)
         symbol = result["returnData"]
         return symbol
+        
+
+    async def get_all_symbols(self):
+        """Returns array of all symbols available for the user."""
+
+        command = {
+            "command": "getAllSymbols"
+        }
+        result = await self.execute_command(command)
+        all_symbols = result["returnData"]
+        return all_symbols
 
 
-    def get_history(self, start=0, end=0, days=0, hours=0, minutes=0):
+    async def get_history(self, start=0, end=0, days=0, hours=0, minutes=0):
         """Returns list of user's trades closed within specified period of time"""
 
         if start != 0:
@@ -228,9 +239,7 @@ class XAPI:
                 "start": start
             }
         }
-        history_json = json.dumps(history)
-        result = self.send(history_json)
-        result = json.loads(result)
+        result = await self.execute_command(history)
         history = result["returnData"]
         return history
 
@@ -267,24 +276,12 @@ class XAPI:
         milliseconds = (days * 24 * 60 * 60 * 1000) + (hours * 60 * 60 * 1000) + (minutes * 60 * 1000)
         return milliseconds
 
-
+    
     @staticmethod
-    def time_conversion(date):
-        start = "01/01/1970 00:00:00"
-        start = datetime.strptime(start, '%m/%d/%Y %H:%M:%S')
-        date = datetime.strptime(date, '%m/%d/%Y %H:%M:%S')
-        final_date = date - start
-        temp = str(final_date)
-        temp1, temp2 = temp.split(", ")
-        hours, minutes, seconds = temp2.split(":")
-        days = final_date.days
-        days = int(days)
-        hours = int(hours)
-        hours += 2
-        minutes = int(minutes)
-        seconds = int(seconds)
-        time = (days * 24 * 60 * 60 * 1000) + (hours * 60 * 60 * 1000) + (minutes * 60 * 1000) + (seconds * 1000)
-        return time
+    def date_to_milliseconds(date_str):
+        dt = datetime.strptime(date_str, "%d.%m.%Y")  # Parse the date, format "dd.mm.yyyy"
+        epoch = datetime(1970, 1, 1)  # Unix epoch
+        return int((dt - epoch).total_seconds() * 1000)  # Convert to milliseconds
 
 
     def connect(self):

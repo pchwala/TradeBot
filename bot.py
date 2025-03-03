@@ -3,6 +3,7 @@ import json
 from time import sleep
 
 from xAPI import XAPI
+from scrapper import Scrapper
 
 
 async def main():
@@ -10,13 +11,14 @@ async def main():
         credentials = json.load(file)
 
     main_api = XAPI(credentials['id'], credentials['password'])
+    scrapper = Scrapper()
     result = main_api.establish_connection()
     if result is False:
         return False
 
     # testing functions
-    print(main_api.ping())
-    print(main_api.get_server_time())
+    # print(main_api.ping())
+    # print(main_api.get_server_time())
     # print(main_api.get_balance())
     # print(main_api.get_margin("BITCOIN", 0.1))
     # print(main_api.get_symbol("BITCOIN"))
